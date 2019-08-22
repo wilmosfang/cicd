@@ -1,0 +1,60 @@
+// env variable set
+env.GIT_URL="http://10.1.0.65:10080/root/assets.git"
+env.BID="${BUILD_ID}"
+env.IMAGE_URL='registry.cn-hangzhou.aliyuncs.com/wilmos/nginx'
+env.TEST_ENV_TAG='TEST'
+env.STAG_ENV_TAG='STAG'
+env.PROD_ENV_TAG='PROD'
+env.TEST_DEP_NAME='nginx'
+env.STAG_DEP_NAME='nginx-stag'
+env.PROD_DEP_NAME='nginx-prod'
+env.TEST_SVC_NAME='nginx'
+env.STAG_SVC_NAME='nginx-stag'
+env.PROD_SVC_NAME='nginx-prod'
+env.APP='nginx'
+
+// stage
+node{
+    stage('checkout'){
+	git url: "${env.GIT_URL}"
+        echo "${TEST_ENV_TAG} checkout"
+    }
+    stage('build'){
+         sh 'sudo /bin/docker build -t ${IMAGE_URL}:${TEST_ENV_TAG}_v${BID} .'
+         echo "${env.IMAGE_URL}:${env.TEST_ENV_TAG}_v${env.BID} build"
+    }
+    stage('test release'){
+        sh 'sudo su - root -c "kubectl set image deployments/${TEST_DEP_NAME} ${APP}=${IMAGE_URL}:${TEST_ENV_TAG}_v${BID} "'
+        sh 'sudo su - root -c "kubectl rollout status deployments/${TEST_DEP_NAME}"'
+        echo "${env.IMAGE_URL}:${env.TEST_ENV_TAG}_v${env.BID} release"
+        sh 'sudo su - root -c "minikube service ${TEST_SVC_NAME} --url | sed \'s/10.0.2.15/10.1.0.165/\'  "'
+    }
+    stage('TEST CONFIRM') {
+        input message: "Is it OK in test env?", ok: "Yes, I confirm"  
+        echo "ok , got it ,let us go to stage env "
+    }
+    stage('build stage'){
+        sh "sudo docker tag  ${IMAGE_URL}:${TEST_ENV_TAG}_v${BID}  ${IMAGE_URL}:${STAG_ENV_TAG}_v${BID} "
+         echo "${IMAGE_URL}:${STAG_ENV_TAG}_v${BID} build"
+    }
+    stage('stage release'){
+       sh 'sudo su - root -c "kubectl set image deployments/${STAG_DEP_NAME} ${APP}=${IMAGE_URL}:${STAG_ENV_TAG}_v${BID}"'
+        sh 'sudo su - root -c "kubectl rollout status deployments/${STAG_DEP_NAME} "'
+        echo "${IMAGE_URL}:${STAG_ENV_TAG}_v${BID} release"
+        sh 'sudo su - root -c "minikube service ${STAG_SVC_NAME}  --url | sed \'s/10.0.2.15/10.1.0.165/\' "'
+    }
+    stage('STAGE CONFIRM') {
+        input message: "Is it OK in stage env?", ok: "Yes, I confirm"  
+        echo "ok , got it ,let us go to prod env "
+    }
+    stage('build prod'){
+        sh "sudo docker tag  ${IMAGE_URL}:${STAG_ENV_TAG}_v${BID}  ${IMAGE_URL}:${PROD_ENV_TAG}_v${BID} "
+         echo "${IMAGE_URL}:${PROD_ENV_TAG}_v${BID} build"
+    }
+    stage('stage release'){
+       sh 'sudo su - root -c "kubectl set image deployments/${PROD_DEP_NAME} ${APP}=${IMAGE_URL}:${PROD_ENV_TAG}_v${BID}"'
+        sh 'sudo su - root -c "kubectl rollout status deployments/${PROD_DEP_NAME} "'
+        echo "${IMAGE_URL}:${PROD_ENV_TAG}_v${BID} release"
+        sh 'sudo su - root -c "minikube service ${PROD_SVC_NAME}  --url | sed \'s/10.0.2.15/10.1.0.165/\' "'
+    }
+}
